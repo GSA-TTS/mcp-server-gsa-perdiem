@@ -4,7 +4,8 @@
       "WebFetch(domain:clinicaltrials.gov)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\aronsonm\\\\Documents\\\\GitHub\\\\mcp-server-nih-clinicaltrials\" -Recurse -File)",
       "Bash(Select-Object FullName)",
-      "Bash(Sort-Object FullName)"
+      "Bash(Sort-Object FullName)",
+      "WebFetch(domain:open.gsa.gov)"
     ]
   }
 }
