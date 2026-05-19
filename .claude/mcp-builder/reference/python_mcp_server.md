@@ -19,7 +19,7 @@ import httpx
 
 ### Server Initialization
 ```python
-mcp = FastMCP("service_mcp")
+mcp = FastMCP("service_mcp", instructions="...")
 ```
 
 ### Tool Registration Pattern
@@ -61,6 +61,57 @@ The name should be:
 - Descriptive of the service/API being integrated
 - Easy to infer from the task description
 - Without version numbers or dates
+
+## app.py Structure
+
+`app.py` is the single file that owns server initialization and transport. Keep it thin — no
+tool logic lives here.
+
+```python
+import os
+
+from dotenv import load_dotenv
+from fastmcp import FastMCP
+
+from <servername>.tools import register_tools
+
+load_dotenv()  # loads .env before any code reads API keys
+
+mcp = FastMCP(
+    "<service>_mcp",
+    instructions=(
+        "One paragraph: what this server is for and what API it wraps.\n\n"
+        "TOOL SELECTION GUIDE:\n"
+        "- Natural-language use case → tool_name\n"
+        "- Another use case → other_tool_name\n\n"
+        "Any important conventions (date formats, ID formats, pagination, rate limits).\n\n"
+        "AUTHENTICATION: Requires SERVICE_API_KEY environment variable."
+    ),
+)
+
+register_tools(mcp)
+
+if __name__ == "__main__":
+    # Dual-transport: HTTP when a platform port env var is set (Databricks Apps, Cloud Run,
+    # etc.), stdio otherwise (Claude Desktop, Claude Code, local MCP clients).
+    port_env = os.getenv("DATABRICKS_APP_PORT") or os.getenv("PORT")
+    if port_env:
+        mcp.run(transport="http", host="0.0.0.0", port=int(port_env))
+    else:
+        mcp.run(transport="stdio")
+```
+
+**`instructions` guidelines:**
+- Lead with one sentence on what the server wraps and why an LLM would use it
+- Include a `TOOL SELECTION GUIDE` mapping natural-language tasks to tool names — this is the
+  highest-value content since it steers the LLM to the right tool without trial and error
+- Document any domain conventions the LLM needs to call tools correctly (fiscal year
+  definitions, ID formats, pagination defaults, casing rules)
+- End with the env var name required for authentication
+
+**`python-dotenv`:** Add `python-dotenv` to your dependencies and call `load_dotenv()` at the
+top of `app.py`. This lets developers drop a `.env` file in the project root for local
+development without setting system env vars, while deployed environments supply vars directly.
 
 ## Tool Implementation
 
@@ -365,13 +416,26 @@ See below for a complete Python MCP server example using the FastMCP 3.x pattern
 '''MCP Server for Example Service.'''
 
 import json
+import os
 from typing import Annotated, Optional
 from enum import Enum
 import httpx
+from dotenv import load_dotenv
 from pydantic import Field
 from fastmcp import FastMCP
 
-mcp = FastMCP("example_mcp")
+load_dotenv()  # loads .env into os.environ before anything reads API keys
+
+mcp = FastMCP(
+    "example_mcp",
+    instructions=(
+        "This server provides access to the Example API. "
+        "TOOL SELECTION GUIDE:\n"
+        "- Search for a user by name or email → example_search_users\n"
+        "- Get full details for a known user ID → example_get_user\n"
+        "AUTHENTICATION: Requires EXAMPLE_API_KEY environment variable."
+    ),
+)
 
 API_BASE_URL = "https://api.example.com/v1"
 
@@ -463,7 +527,11 @@ async def example_search_users(
 
 
 if __name__ == "__main__":
-    mcp.run()
+    port_env = os.getenv("DATABRICKS_APP_PORT") or os.getenv("PORT")
+    if port_env:
+        mcp.run(transport="http", host="0.0.0.0", port=int(port_env))
+    else:
+        mcp.run(transport="stdio")
 ```
 
 ---
@@ -613,21 +681,27 @@ async def query_data(query: str, ctx: Context) -> str:
 
 ### Transport Options
 
-FastMCP supports two main transport mechanisms:
+FastMCP supports two main transport mechanisms. Use a dual-transport `__main__` block so the
+same `app.py` works both as a local stdio server and as a deployed HTTP service without any
+code changes:
 
 ```python
-# stdio transport (for local tools) - default
-if __name__ == "__main__":
-    mcp.run()
+import os
 
-# Streamable HTTP transport (for remote servers)
 if __name__ == "__main__":
-    mcp.run(transport="streamable_http", port=8000)
+    # Check for a platform port env var (set by Databricks Apps, Cloud Run, etc.).
+    # If present, run as an HTTP server. Otherwise fall back to stdio for local
+    # MCP clients (Claude Desktop, Claude Code, etc.).
+    port_env = os.getenv("DATABRICKS_APP_PORT") or os.getenv("PORT")
+    if port_env:
+        mcp.run(transport="http", host="0.0.0.0", port=int(port_env))
+    else:
+        mcp.run(transport="stdio")
 ```
 
 **Transport selection:**
-- **stdio**: Command-line tools, local integrations, subprocess execution
-- **Streamable HTTP**: Web services, remote access, multiple clients
+- **stdio**: Local MCP clients (Claude Desktop, Claude Code), single-user subprocess execution
+- **http**: Deployed web services, Databricks Apps, Cloud Run, multi-client scenarios
 
 ---
 
@@ -681,6 +755,15 @@ Before finalizing your Python MCP server implementation, ensure:
 - [ ] Common functionality is extracted into reusable functions
 - [ ] Error messages are clear, actionable, and educational
 - [ ] Outputs are properly validated and formatted
+
+### app.py
+- [ ] `load_dotenv()` called at the top before any code reads env vars
+- [ ] `python-dotenv` listed in project dependencies
+- [ ] `FastMCP` initialized with a meaningful `instructions` string
+- [ ] `instructions` includes a TOOL SELECTION GUIDE mapping tasks to tool names
+- [ ] `instructions` documents domain conventions and the required env var name
+- [ ] Dual-transport `__main__` block: HTTP when `DATABRICKS_APP_PORT`/`PORT` is set, stdio otherwise
+- [ ] No tool logic in `app.py` — only server init and transport configuration
 
 ### Tool Configuration
 - [ ] All tools implement 'name' and 'annotations' in the decorator
