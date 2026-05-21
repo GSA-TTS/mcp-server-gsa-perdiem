@@ -27,3 +27,6 @@ htmlcov/
 *.swp
 
 .DS_Store
+
+# ignore reference folder 
+ref/
